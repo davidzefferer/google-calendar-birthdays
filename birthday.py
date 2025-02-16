@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from datetime import datetime
 
+
 @dataclass
 class Birthday:
     name: str
@@ -23,9 +24,15 @@ class Birthday:
         return datetime(year, self.month, self.day)
 
     def __get_last_leap_year__(year: int):
-        while not ((year % 4 == 0 and year %100 != 0) or (year % 100 == 0 and year % 400 == 0)):
+        while not (
+            (year % 4 == 0 and year % 100 != 0) or (year % 100 == 0 and year % 400 == 0)
+        ):
             year -= 1
         return year
 
-    def is_considered_same_birthday(self, other: 'Birthday') -> bool:
-        return self.name == other.name and self.month == other.month and self.day == other.day
+    def is_considered_same_birthday(self, other: "Birthday") -> bool:
+        return (
+            self.name == other.name
+            and self.month == other.month
+            and self.day == other.day
+        )
