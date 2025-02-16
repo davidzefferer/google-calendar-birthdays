@@ -48,24 +48,6 @@ class GoogleClient:
         except HttpError as error:
             print(f"An error occurred: {error}")
 
-    def get_calendar_id(self, name: str) -> str:
-        page_token = None
-        found_id = None
-        while True:
-            calendar_list = self.calendar.calendarList().list(pageToken=page_token).execute()
-            for calendar_list_entry in calendar_list['items']:
-                if calendar_list_entry['summary'] == name:
-                    found_id = calendar_list_entry['id']
-                    break
-            page_token = calendar_list.get('nextPageToken')
-            if not page_token or found_id:
-                break
-        
-        if not found_id:
-            raise Exception(f'No calendar with the name {name} found')
-
-        return found_id
-
     def create_birthday_event(self, birthday: Birthday):
         # See https://developers.google.com/calendar/api/guides/event-types#birthday
         # Would have loved to include the link to the contact, see birthday.contact
@@ -74,7 +56,7 @@ class GoogleClient:
 
         recurrence_rule = f'RRULE:FREQ=YEARLY'
         if(date.month == 2 and date.day == 29):
-            recurrence_rule = f'RRULE:FREQ=YEARLY;INTERVAL=1;BYMONTH=2;BYMONTHDAY=-1'
+            recurrence_rule = f'RRULE:FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=-1'
     
         event = {
             'summary': f'{birthday.name}',
@@ -104,13 +86,14 @@ class GoogleClient:
         created_event = self.calendar.events().insert(calendarId='primary', body=event).execute()
         return created_event
 
-    def does_birthday_exist(self, birthday: Birthday) -> bool:
-        date = birthday.as_date()
+    def delete_event(self, event_id: str):
+        self.calendar.events().delete(calendarId='primary', eventId=event_id).execute()
+    
+    def get_birthdays_from_calendar(self, year: int) -> List[Birthday]:
+        min = f'{year}-01-01T00:00:00Z'
+        max = f'{year}-12-31T23:59:59Z'
 
-        # TODO: Replace UTC time zone Z with actual time zone
-
-        min = f'{(date - timedelta(days=1)).isoformat()}Z'
-        max = f'{(date + timedelta(days=1)).isoformat()}Z'
+        birthdays = []
 
         page_token = None
         while True:
@@ -122,12 +105,33 @@ class GoogleClient:
                 pageToken=page_token).execute()
             
             for event in events['items']:
-                if 'summary' in event and event['summary'] == birthday.name:
-                    return True
+                if event['birthdayProperties']['type'] == 'self':
+                    continue
+
+                date = event['start']['date']
+                year = int(date[:4])
+                month = int(date[5:7])
+                day = int(date[8:])
+
+                recurrence_rule = event['recurrence'][0]
+                if 'BYMONTH=2' in recurrence_rule and 'BYMONTHDAY=-1' in recurrence_rule:
+                    month = 2
+                    day = 29
+
+                birthdays.append(Birthday(
+                    event['summary'],
+                    year,
+                    month,
+                    day,
+                    contact=None,
+                    event_id=event['id'],
+                ))
+
             page_token = events.get('nextPageToken')
             if not page_token:
                 break
-        return False
+        
+        return birthdays
     
     def get_birthdays_from_contacts(self) -> List[Birthday]:
         # TODO: Multiple pages for more than 500 contacts?
@@ -148,9 +152,10 @@ class GoogleClient:
                     year = birthday['year']
                 contacts_with_birthday.append(Birthday(
                     name,
-                    contact['resourceName'],
                     year,
                     birthday['month'],
-                    birthday['day']
+                    birthday['day'],
+                    contact=contact['resourceName'],
+                    event_id=None
                 ))
         return contacts_with_birthday
